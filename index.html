@@ -26,21 +26,60 @@
       background: #1a5276;
     }
 
+    /*
+     * BANNER HIDING STRATEGY
+     * ───────────────────────────────────────────────────────────────
+     * Problem: GAS injects a ~48px info banner above all iframe
+     * content. Its exact height varies by browser/device/zoom level
+     * making pixel-offset approaches fragile.
+     *
+     * Solution: Two-layer approach
+     *   Layer 1 — iframe is pushed up by a GENEROUS fixed offset
+     *             (larger than the banner on any device), clipped by
+     *             overflow:hidden on the wrapper.
+     *   Layer 2 — A navy overlay strip sits on top with
+     *             pointer-events:none. It covers any residual banner
+     *             pixels AND the portion of the app header that got
+     *             clipped by the generous offset.
+     *             Since the app header is ALSO navy (#1a5276), the
+     *             overlay blends pixel-perfectly — it looks like the
+     *             app header starts flush at the screen edge.
+     *             Clicks pass through to the iframe below normally.
+     * ───────────────────────────────────────────────────────────────
+     */
+
+    /* Clips overflow — hides whatever is pushed above the fold */
     #frame-wrapper {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
       overflow: hidden;
     }
 
+    /* Iframe pushed up generously; height compensated */
     #app-frame {
       position: absolute;
       left: 0;
       width: 100%;
       border: none;
-      /* top and height controlled by JS based on device width */
+      /* JS sets top and height responsively */
     }
 
-    /* Splash screen */
+    /*
+     * Navy overlay — sits above iframe, pointer-events:none so
+     * all clicks pass through to the iframe beneath it.
+     * Height = generous offset so it covers exactly what we clipped.
+     * Color = #1a5276 = exact same as app header → seamless blend.
+     */
+    #banner-mask {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: #1a5276;
+      pointer-events: none;   /* ← clicks pass through */
+      z-index: 50;
+      /* height set by JS to match iframe offset */
+    }
+
+    /* Splash */
     #splash {
       position: fixed;
       inset: 0;
@@ -60,7 +99,7 @@
       box-shadow: 0 8px 32px rgba(0,0,0,0.3);
     }
     #splash h1 {
-      color: #ffffff;
+      color: #fff;
       font-size: 28px;
       font-family: Arial, sans-serif;
       font-weight: 700;
@@ -84,13 +123,7 @@
 </head>
 <body>
 
-  <div id="splash">
-    <img src="icons/icon-192.png" alt="ClinicSync" />
-    <h1>ClinicSync</h1>
-    <p>Clinical Patient Management</p>
-    <div class="spinner"></div>
-  </div>
-
+  <!-- Layer 1: iframe pushed up, clipped by wrapper -->
   <div id="frame-wrapper">
     <iframe
       id="app-frame"
@@ -100,48 +133,69 @@
     ></iframe>
   </div>
 
+  <!-- Layer 2: navy mask — covers residual banner + clipped header,
+       blends with app header color, clicks pass through -->
+  <div id="banner-mask"></div>
+
+  <!-- Splash -->
+  <div id="splash">
+    <img src="icons/icon-192.png" alt="ClinicSync" />
+    <h1>ClinicSync</h1>
+    <p>Clinical Patient Management</p>
+    <div class="spinner"></div>
+  </div>
+
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(function() {});
     }
 
-    var frame   = document.getElementById('app-frame');
-    var wrapper = document.getElementById('frame-wrapper');
-    var splash  = document.getElementById('splash');
+    var frame  = document.getElementById('app-frame');
+    var mask   = document.getElementById('banner-mask');
+    var splash = document.getElementById('splash');
 
-    // GAS banner height varies by viewport width:
-    //   >= 768px  → fits on one line → ~40px
-    //   480-767px → may wrap         → ~56px
-    //   < 480px   → wraps fully      → ~72px
-    // Extra 4px safety buffer added to each tier.
-    function getBannerOffset() {
+    /*
+     * Offset = how far we push the iframe up.
+     * Must be >= GAS banner height on the device.
+     * We use generous values with comfortable headroom.
+     *
+     * The app header (~56px tall, same navy color) absorbs any
+     * over-clip — the mask div covers it with the identical color
+     * so the visual result is always a clean, flush header.
+     *
+     * Breakpoints mirror common device categories:
+     *   >= 1024px  desktop / tablet landscape
+     *    600-1023  tablet portrait
+     *    < 600     phone
+     */
+    function getOffset() {
       var w = window.innerWidth;
-      if (w >= 768) return 44;
-      if (w >= 480) return 60;
-      return 76;
+      if (w >= 1024) return 56;
+      if (w >=  600) return 64;
+      return 72;
     }
 
-    function applyOffset() {
-      var offset = getBannerOffset();
+    function applyLayout() {
+      var offset = getOffset();
+      // Push iframe up
       frame.style.top    = '-' + offset + 'px';
       frame.style.height = 'calc(100% + ' + offset + 'px)';
+      // Mask covers exactly the same height
+      mask.style.height  = offset + 'px';
     }
 
-    applyOffset();
-    window.addEventListener('resize', applyOffset);
+    applyLayout();
+    window.addEventListener('resize', applyLayout);
 
-    var splashHidden = false;
+    // Splash
+    var gone = false;
     function hideSplash() {
-      if (splashHidden) return;
-      splashHidden = true;
+      if (gone) return;
+      gone = true;
       splash.classList.add('fade-out');
       setTimeout(function() { splash.style.display = 'none'; }, 550);
     }
-
-    frame.addEventListener('load', function() {
-      setTimeout(hideSplash, 700);
-    });
-
+    frame.addEventListener('load', function() { setTimeout(hideSplash, 700); });
     setTimeout(hideSplash, 10000);
   </script>
 
