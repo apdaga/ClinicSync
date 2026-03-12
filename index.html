@@ -103,12 +103,37 @@
     <div class="spinner"></div>
   </div>
 
+  <!-- Offline screen — shown when GAS iframe fails to load -->
+  <div id="offline-screen" style="display:none;position:fixed;inset:0;z-index:200;
+    background:#f0f4f8;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:32px;gap:16px;font-family:Arial,sans-serif">
+    <div style="font-size:64px;line-height:1">📡</div>
+    <h2 style="margin:0;font-size:20px;color:#1a5276;font-weight:700">No Internet Connection</h2>
+    <p style="margin:0;color:#5d6d7e;font-size:14px;line-height:1.7;max-width:280px">
+      ClinicSync needs an internet connection to reach the server.<br>
+      Please check your Wi-Fi or mobile data and try again.
+    </p>
+    <button id="retry-btn" onclick="retryLoad()"
+      style="margin-top:8px;padding:13px 32px;background:#1a5276;color:white;border:none;
+      border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;
+      display:flex;align-items:center;gap:10px;letter-spacing:0.3px">
+      &#8635; Retry
+    </button>
+    <p id="offline-status" style="margin:0;font-size:12px;color:#999">
+      Waiting for connection…
+    </p>
+  </div>
+
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(function() {});
     }
 
-    var gone = false;
+    var gone    = false;
+    var offlineShown = false;
+    var LOAD_TIMEOUT = 10000; // show offline screen if iframe hasn't loaded in 10s
+    var loadTimer = null;
+
     function hideSplash() {
       if (gone) return; gone = true;
       var s = document.getElementById('splash');
@@ -116,11 +141,74 @@
       setTimeout(function() { s.style.display = 'none'; }, 550);
     }
 
+    function showOffline() {
+      if (offlineShown) return;
+      offlineShown = true;
+      hideSplash();
+      document.getElementById('offline-screen').style.display = 'flex';
+    }
+
+    function hideOffline() {
+      offlineShown = false;
+      document.getElementById('offline-screen').style.display = 'none';
+    }
+
+    function retryLoad() {
+      var st  = document.getElementById('offline-status');
+      var btn = document.getElementById('retry-btn');
+      st.textContent  = 'Connecting…';
+      btn.disabled    = true;
+      btn.textContent = '⏳ Connecting…';
+
+      hideOffline();
+      // Reload the iframe by re-setting its src
+      var frame = document.getElementById('app-frame');
+      var src   = frame.src;
+      frame.src = '';
+      setTimeout(function() {
+        frame.src = src;
+        gone = false; // allow splash to show again briefly
+        document.getElementById('splash').style.display = 'flex';
+        document.getElementById('splash').style.opacity = '1';
+        document.getElementById('splash').classList.remove('fade-out');
+        // Reset timeout
+        clearTimeout(loadTimer);
+        loadTimer = setTimeout(function() {
+          btn.disabled    = false;
+          btn.innerHTML   = '&#8635; Retry';
+          st.textContent  = "Still can't reach the server. Check your connection.";
+          showOffline();
+        }, LOAD_TIMEOUT);
+      }, 100);
+    }
+
+    // Iframe loaded successfully
     document.getElementById('app-frame').addEventListener('load', function() {
-      setTimeout(hideSplash, 700);
+      clearTimeout(loadTimer);
+      if (!offlineShown) {
+        setTimeout(hideSplash, 700);
+      }
     });
 
-    setTimeout(hideSplash, 10000);
+    // Iframe load error (net::ERR_NAME_NOT_RESOLVED etc.)
+    document.getElementById('app-frame').addEventListener('error', function() {
+      clearTimeout(loadTimer);
+      showOffline();
+    });
+
+    // Timeout fallback — iframe load event may not fire on Android network error
+    loadTimer = setTimeout(function() {
+      showOffline();
+    }, LOAD_TIMEOUT);
+
+    // Auto-retry when device comes back online
+    window.addEventListener('online', function() {
+      var st = document.getElementById('offline-status');
+      if (offlineShown) {
+        st.textContent = 'Connection detected — retrying…';
+        setTimeout(retryLoad, 1000);
+      }
+    });
 
   </script>
 
