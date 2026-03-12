@@ -147,16 +147,18 @@
 
     // ── Offline screen ────────────────────────────────────────────────────────
     function showOffline(msg) {
-      if (offlineShown) return;
       offlineShown = true;
-      hideSplash();
+      // Hide iframe so dragon never shows through
+      document.getElementById('app-frame').style.visibility = 'hidden';
       var st = document.getElementById('offline-status');
       if (st && msg) st.textContent = msg;
       document.getElementById('offline-screen').style.display = 'flex';
+      hideSplash();
     }
     function hideOffline() {
       offlineShown = false;
       document.getElementById('offline-screen').style.display = 'none';
+      document.getElementById('app-frame').style.visibility = 'visible';
     }
 
     // ── Offline banner (above keyboard) ───────────────────────────────────────
@@ -172,7 +174,6 @@
       var b = document.getElementById('offline-banner');
       if (!b || b.style.display === 'none') return;
       if (window.visualViewport) {
-        // keyboard height = full window height minus visible viewport height minus any scroll offset
         var kbHeight = window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop;
         b.style.bottom = Math.max(0, Math.round(kbHeight)) + 'px';
       } else {
@@ -184,86 +185,77 @@
       window.visualViewport.addEventListener('scroll', adjustBanner);
     }
 
-    // ── postMessage bridge — GAS iframe signals online/offline state ──────────
+    // ── postMessage bridge ────────────────────────────────────────────────────
+    // GAS runs on script.google.com but redirects to script.googleusercontent.com
+    // Accept messages from either domain — message type is specific enough to be safe
     window.addEventListener('message', function(e) {
-      // Only accept messages from the GAS domain
-      if (!e.origin || e.origin.indexOf('script.google.com') === -1) return;
       if (!e.data || !e.data.type) return;
+      var origin = (e.origin || '').toLowerCase();
+      var trusted = origin.indexOf('google.com') !== -1 ||
+                    origin.indexOf('googleusercontent.com') !== -1 ||
+                    origin === 'null'; // sandboxed iframes sometimes report null
+      if (!trusted) return;
       if (e.data.type === 'cs_offline') showBanner();
       if (e.data.type === 'cs_online')  hideBanner();
     });
 
-    // ── Connectivity check — fetch with timeout, resolves true/false ──────────
+    // ── Connectivity check ────────────────────────────────────────────────────
+    // Uses generate_204 — tiny Google endpoint, no CORS issues, reliable
     function checkConnectivity(timeoutMs) {
-      timeoutMs = timeoutMs || 8000;
       return new Promise(function(resolve) {
-        var done = false;
+        var done  = false;
         var timer = setTimeout(function() {
           if (!done) { done = true; resolve(false); }
-        }, timeoutMs);
-        // Ping Google's generate_204 endpoint — tiny, reliable, no CORS issues
+        }, timeoutMs || 6000);
         fetch('https://connectivitycheck.gstatic.com/generate_204', {
           method: 'HEAD', mode: 'no-cors', cache: 'no-store'
         })
-        .then(function() { if (!done) { done = true; clearTimeout(timer); resolve(true); } })
+        .then(function() { if (!done) { done = true; clearTimeout(timer); resolve(true);  } })
         .catch(function() { if (!done) { done = true; clearTimeout(timer); resolve(false); } });
       });
     }
 
-    // ── Retry button ──────────────────────────────────────────────────────────
+    // ── Retry ─────────────────────────────────────────────────────────────────
     window.retryLoad = function() {
       var btn = document.getElementById('retry-btn');
       var st  = document.getElementById('offline-status');
-      btn.disabled   = true;
+      btn.disabled    = true;
       btn.textContent = 'Checking…';
       st.textContent  = 'Checking connection…';
-
       checkConnectivity(6000).then(function(online) {
+        btn.disabled    = false;
+        btn.textContent = '↺ Retry';
         if (online) {
           hideOffline();
-          // Show splash and reload iframe
           gone = false;
           var splash = document.getElementById('splash');
-          splash.style.display   = 'flex';
-          splash.style.opacity   = '1';
+          splash.style.cssText += ';display:flex;opacity:1;';
           splash.classList.remove('fade-out');
           var frame = document.getElementById('app-frame');
           frame.src = '';
           setTimeout(function() { frame.src = GAS_URL; }, 150);
-          // Re-arm timeout in case load event fires for error page again
-          setTimeout(function() {
-            btn.disabled    = false;
-            btn.textContent = '↺ Retry';
-          }, 2000);
         } else {
-          btn.disabled    = false;
-          btn.textContent = '↺ Retry';
-          st.textContent  = "Still can't reach the server. Check your connection.";
+          st.textContent = "Still can't reach server. Check your connection.";
         }
       });
     };
 
-    // ── Startup: check connectivity FIRST, then load iframe ──────────────────
-    // Do NOT rely on iframe load/error events — Android fires load even on error pages.
-    // Instead: probe connectivity, show offline immediately if unreachable.
-    checkConnectivity(8000).then(function(online) {
+    // ── Startup ───────────────────────────────────────────────────────────────
+    // Check connectivity BEFORE letting iframe load event control splash.
+    // This prevents the Chrome dinosaur from ever being visible.
+    checkConnectivity(6000).then(function(online) {
       if (!online) {
         showOffline('No internet connection.');
-      } else {
-        // Connectivity confirmed — iframe is already loading in background
-        // hideSplash when iframe load event fires
       }
+      // If online: iframe is loading in background, hideSplash via load event below
     });
 
-    // Iframe load event — fires on both success AND Android error pages
-    // Only hide splash if we are NOT in offline state
+    // Only hide splash if connectivity check passed (offlineShown is false)
     document.getElementById('app-frame').addEventListener('load', function() {
-      if (!offlineShown) {
-        setTimeout(hideSplash, 700);
-      }
+      if (!offlineShown) setTimeout(hideSplash, 700);
     });
 
-    // Auto-retry when browser detects online event (secondary signal)
+    // Auto-retry when connection restored
     window.addEventListener('online', function() {
       if (offlineShown) {
         document.getElementById('offline-status').textContent = 'Connection detected — retrying…';
