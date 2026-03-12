@@ -1,7 +1,7 @@
 {
   "name": "ClinicSync",
   "short_name": "ClinicSync",
-  "description": "Clinical Patient Management — anywhere, anytime",
+  "description": "Manage patients, registrations, follow-ups, appointments, transactions with detailed analytics on fingertips — anywhere, anytime.",
   "start_url": "./",
   "display": "standalone",
   "orientation": "any",
@@ -21,13 +21,13 @@
       "purpose": "any"
     },
     {
-      "src": "icons/icon-192.png",
+      "src": "icons/icon-192-maskable.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "icons/icon-512.png",
+      "src": "icons/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
