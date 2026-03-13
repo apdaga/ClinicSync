@@ -94,6 +94,7 @@
     src="https://script.google.com/macros/s/AKfycby4FymWf-e1EYy0TD9VB9IWKHC-EXe8f87w0Wv70y41KiyHSr4oT-6d17VNREvvI8g2pA/exec"
     allow="clipboard-read; clipboard-write"
     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+    style="visibility:hidden"
   ></iframe>
 
   <div id="splash">
@@ -135,6 +136,7 @@
 
     var gone         = false;
     var offlineShown = false;
+    var iframeReady  = false;  // true once connectivity confirmed and iframe made visible
     var GAS_URL      = document.getElementById('app-frame').src;
 
     // ── Splash ────────────────────────────────────────────────────────────────
@@ -148,33 +150,35 @@
     // ── Offline screen ────────────────────────────────────────────────────────
     function showOffline(msg) {
       offlineShown = true;
-      // Hide iframe so dragon never shows through
-      document.getElementById('app-frame').style.visibility = 'hidden';
+      // Iframe is already invisible (visibility:hidden in HTML) — keep it hidden
       var st = document.getElementById('offline-status');
-      if (st && msg) st.textContent = msg;
+      if (st) st.textContent = msg || 'No internet connection.';
       document.getElementById('offline-screen').style.display = 'flex';
       hideSplash();
     }
     function hideOffline() {
       offlineShown = false;
       document.getElementById('offline-screen').style.display = 'none';
-      document.getElementById('app-frame').style.visibility = 'visible';
     }
 
-    // ── Offline banner (above keyboard) ───────────────────────────────────────
+    // ── Offline banner (above keyboard, no postMessage needed) ────────────────
+    // Runs in top-level PWA shell where visualViewport tracks real keyboard height
     function showBanner() {
       var b = document.getElementById('offline-banner');
       b.style.display = 'flex';
       adjustBanner();
     }
     function hideBanner() {
-      document.getElementById('offline-banner').style.display = 'none';
+      var b = document.getElementById('offline-banner');
+      b.style.display = 'none';
     }
     function adjustBanner() {
       var b = document.getElementById('offline-banner');
       if (!b || b.style.display === 'none') return;
       if (window.visualViewport) {
-        var kbHeight = window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop;
+        var kbHeight = window.innerHeight
+                     - window.visualViewport.height
+                     - window.visualViewport.offsetTop;
         b.style.bottom = Math.max(0, Math.round(kbHeight)) + 'px';
       } else {
         b.style.bottom = '0px';
@@ -185,22 +189,23 @@
       window.visualViewport.addEventListener('scroll', adjustBanner);
     }
 
-    // ── postMessage bridge ────────────────────────────────────────────────────
-    // GAS runs on script.google.com but redirects to script.googleusercontent.com
-    // Accept messages from either domain — message type is specific enough to be safe
-    window.addEventListener('message', function(e) {
-      if (!e.data || !e.data.type) return;
-      var origin = (e.origin || '').toLowerCase();
-      var trusted = origin.indexOf('google.com') !== -1 ||
-                    origin.indexOf('googleusercontent.com') !== -1 ||
-                    origin === 'null'; // sandboxed iframes sometimes report null
-      if (!trusted) return;
-      if (e.data.type === 'cs_offline') showBanner();
-      if (e.data.type === 'cs_online')  hideBanner();
+    // Banner driven by browser offline/online events on the TOP-LEVEL window
+    // (not inside the iframe — these fire reliably in the PWA shell)
+    window.addEventListener('offline', function() {
+      if (iframeReady) showBanner();
+    });
+    window.addEventListener('online', function() {
+      hideBanner();
+      if (offlineShown) {
+        // Auto-retry if stuck on offline screen
+        document.getElementById('offline-status').textContent =
+          'Connection detected — retrying…';
+        setTimeout(retryLoad, 800);
+      }
     });
 
     // ── Connectivity check ────────────────────────────────────────────────────
-    // Uses generate_204 — tiny Google endpoint, no CORS issues, reliable
+    // fetch generate_204: tiny, no CORS, works even when GAS is down
     function checkConnectivity(timeoutMs) {
       return new Promise(function(resolve) {
         var done  = false;
@@ -227,11 +232,15 @@
         btn.textContent = '↺ Retry';
         if (online) {
           hideOffline();
+          // Reset splash
           gone = false;
           var splash = document.getElementById('splash');
-          splash.style.cssText += ';display:flex;opacity:1;';
+          splash.style.display = 'flex';
+          splash.style.opacity = '1';
           splash.classList.remove('fade-out');
+          // Reload iframe
           var frame = document.getElementById('app-frame');
+          frame.style.visibility = 'hidden'; // keep hidden until load fires
           frame.src = '';
           setTimeout(function() { frame.src = GAS_URL; }, 150);
         } else {
@@ -241,25 +250,22 @@
     };
 
     // ── Startup ───────────────────────────────────────────────────────────────
-    // Check connectivity BEFORE letting iframe load event control splash.
-    // This prevents the Chrome dinosaur from ever being visible.
+    // iframe starts invisible (visibility:hidden in HTML attribute).
+    // Check connectivity FIRST. Only reveal iframe after we know it will load.
     checkConnectivity(6000).then(function(online) {
       if (!online) {
         showOffline('No internet connection.');
+      } else {
+        // Online — reveal iframe, it's already loading in background
+        document.getElementById('app-frame').style.visibility = 'visible';
+        iframeReady = true;
       }
-      // If online: iframe is loading in background, hideSplash via load event below
     });
 
-    // Only hide splash if connectivity check passed (offlineShown is false)
+    // Hide splash only after iframe becomes visible AND finishes loading
     document.getElementById('app-frame').addEventListener('load', function() {
-      if (!offlineShown) setTimeout(hideSplash, 700);
-    });
-
-    // Auto-retry when connection restored
-    window.addEventListener('online', function() {
-      if (offlineShown) {
-        document.getElementById('offline-status').textContent = 'Connection detected — retrying…';
-        setTimeout(retryLoad, 800);
+      if (!offlineShown && iframeReady) {
+        setTimeout(hideSplash, 700);
       }
     });
 
