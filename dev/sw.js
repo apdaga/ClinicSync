@@ -1,7 +1,18 @@
-// ClinicSync Service Worker v1.0
+// ClinicSync Service Worker
 // Enables PWA installability — minimal caching (app lives on GAS server)
+//
+// ── IMPORTANT: Update CACHE_NAME for each environment ─────────────────────
+//    Format: csync-<env>-v<version>
+//    Examples:
+//      DEV          → csync-dev-v1
+//      QA           → csync-qa-v1
+//      Demo         → csync-demo-v1
+//      Mann Clinic  → csync-mann-v1
+//    Change the version number (v1 → v2) whenever you update PWA shell files
+//    so browsers pick up the new version and discard the old cache.
+// ──────────────────────────────────────────────────────────────────────────
+const CACHE_NAME = 'csync-dev-v1';   // ← change per environment
 
-const CACHE_NAME = 'clinicsync-dev-v1';
 const SHELL_FILES = [
   './',
   './index.html',
