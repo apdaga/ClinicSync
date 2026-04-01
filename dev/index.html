@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>ClinicSync</title>
+
+  <!-- ► Load environment config FIRST — all other scripts depend on it -->
+  <script src="pwa-config.js"></script>
+
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#1a5276" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -180,8 +184,9 @@
 </head>
 <body>
 
+  <!-- src is intentionally blank — set by JS from pwa-config.js below -->
   <iframe id="app-frame"
-    src="https://script.google.com/macros/s/AKfycbzV8pUvj4GMaXlnMhh7MkgfDleN8X1frH9Q-L0g4GHPlQacOyY3ozz2SPAuyccAmnJV/exec"
+    src=""
     allow="clipboard-read; clipboard-write"
     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
     style="visibility:hidden"
@@ -233,14 +238,19 @@
 
   <script>
     // ── Environment config ─────────────────────────────────────────────────────
-    // ► FALLBACK ENV — only used on very first load before any login
-    // After first login, ENV is read from localStorage (set by the GAS app)
-    // so you only need to set ENV in config.html (GAS) — not here
-    var ENV_FALLBACK = 'DEV';   // ← change this per environment folder: DEV | QA | PreProd | PROD
+    // All values come from pwa-config.js (loaded in <head>).
+    // Do NOT hardcode SCRIPT_URL, ENV, or CACHE_NAME anywhere in this file.
+
+    // Set iframe src from config (iframe src is blank in HTML to avoid hardcoding)
+    document.getElementById('app-frame').src = CLINICSYNC_CONFIG.SCRIPT_URL;
+
+    // ENV_FALLBACK — used on very first load before any login.
+    // After first login, ENV is read from localStorage (set by the GAS app).
+    var ENV_FALLBACK = CLINICSYNC_CONFIG.ENV;
 
     // Derive storage prefix — same algorithm as script.html _ENV_PREFIX
     // so we read the same localStorage keys the GAS app writes
-    var _SCRIPT_URL  = document.getElementById('app-frame').src;
+    var _SCRIPT_URL  = CLINICSYNC_CONFIG.SCRIPT_URL;
     var _ENV_PREFIX  = 'csync_' + _SCRIPT_URL.replace(/[^a-zA-Z0-9]/g,'').slice(-8) + '_';
 
     // ── Splash: populate clinic name, tagline, ENV from localStorage cache ─────
@@ -270,7 +280,7 @@
     var gone         = false;
     var offlineShown = false;
     var iframeReady  = false;
-    var GAS_URL      = document.getElementById('app-frame').src;
+    var GAS_URL      = CLINICSYNC_CONFIG.SCRIPT_URL;
 
     // ── Splash ─────────────────────────────────────────────────────────────────
     function hideSplash() {
